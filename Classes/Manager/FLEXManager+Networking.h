@@ -35,6 +35,9 @@ NS_ASSUME_NONNULL_BEGIN
 - (void)setCustomViewerForContentType:(NSString *)contentType
             viewControllerFutureBlock:(FLEXCustomContentViewerFuture)viewControllerFutureBlock;
 
+
+- (void)addTrackingRequest:(NSURLRequest *)request;
+
 @end
 
 NS_ASSUME_NONNULL_END

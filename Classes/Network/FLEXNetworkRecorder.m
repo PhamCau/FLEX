@@ -32,9 +32,11 @@ NSString *const kFLEXNetworkRecorderResponseCacheLimitDefaultsKey = @"com.flex.r
 
 @property (nonatomic) OSCache *restCache;
 @property (atomic) NSMutableArray<FLEXHTTPTransaction *> *orderedHTTPTransactions;
+@property (atomic) NSMutableArray<FLEXHTTPTransaction *> *trackingHTTPTransactions;
 @property (atomic) NSMutableArray<FLEXWebsocketTransaction *> *orderedWSTransactions;
 @property (atomic) NSMutableArray<FLEXFirebaseTransaction *> *orderedFirebaseTransactions;
 @property (atomic) NSMutableDictionary<NSString *, __kindof FLEXNetworkTransaction *> *requestIDsToTransactions;
+@property (atomic) NSMutableDictionary<NSString *, __kindof FLEXNetworkTransaction *> *requestIDsToTrackingTransactions;
 @property (nonatomic) dispatch_queue_t queue;
 
 @end
@@ -55,8 +57,10 @@ NSString *const kFLEXNetworkRecorderResponseCacheLimitDefaultsKey = @"com.flex.r
         
         self.orderedWSTransactions = [NSMutableArray new];
         self.orderedHTTPTransactions = [NSMutableArray new];
+        self.trackingHTTPTransactions = [NSMutableArray new];
         self.orderedFirebaseTransactions = [NSMutableArray new];
         self.requestIDsToTransactions = [NSMutableDictionary new];
+        self.requestIDsToTrackingTransactions = [NSMutableDictionary new];
         self.hostDenylist = NSUserDefaults.standardUserDefaults.flex_networkHostDenylist.mutableCopy;
 
         // Serial queue used because we use mutable objects that are not thread safe
@@ -94,6 +98,10 @@ NSString *const kFLEXNetworkRecorderResponseCacheLimitDefaultsKey = @"com.flex.r
     return Synchronized(self.queue, self.orderedHTTPTransactions.copy);
 }
 
+- (NSArray<FLEXHTTPTransaction *> *)TrackingTransactions {
+    return Synchronized(self.queue, self.trackingHTTPTransactions.copy);
+}
+
 - (NSArray<FLEXWebsocketTransaction *> *)websocketTransactions {
     return Synchronized(self.queue, self.orderedWSTransactions.copy);
 }
@@ -113,6 +121,8 @@ NSString *const kFLEXNetworkRecorderResponseCacheLimitDefaultsKey = @"com.flex.r
         [self.orderedHTTPTransactions removeAllObjects];
         [self.orderedFirebaseTransactions removeAllObjects];
         [self.requestIDsToTransactions removeAllObjects];
+        [self.trackingHTTPTransactions removeAllObjects];
+        [self.requestIDsToTrackingTransactions removeAllObjects];
         
         [self notify:kFLEXNetworkRecorderTransactionsClearedNotification transaction:nil];
     });
@@ -318,6 +328,57 @@ NSString *const kFLEXNetworkRecorderResponseCacheLimitDefaultsKey = @"com.flex.r
         }
         
         transaction.requestMechanism = mechanism;
+        [self postUpdateNotificationForTransaction:transaction];
+    });
+}
+
+#pragma mark - Tracking Events
+- (void)recordTrackingRequestWithRequestID:(NSString *)requestID
+                                   request:(NSURLRequest *)request {
+    for (NSString *host in self.hostDenylist) {
+        if ([request.URL.host hasSuffix:host]) {
+            return;
+        }
+    }
+    
+    FLEXHTTPTransaction *transaction = [FLEXHTTPTransaction request:request identifier:requestID];
+
+    // A redirect is always a new request
+    dispatch_async(self.queue, ^{
+        [self.trackingHTTPTransactions insertObject:transaction atIndex:0];
+        self.requestIDsToTrackingTransactions[requestID] = transaction;
+    });
+}
+
+- (void)recordTrackingResponseWithRequestID:(NSString *)requestID response:(NSURLResponse *)response {
+    // Before async block to stay accurate
+    NSDate *responseDate = [NSDate date];
+
+    dispatch_async(self.queue, ^{
+        FLEXHTTPTransaction *transaction = self.requestIDsToTrackingTransactions[requestID];
+        if (!transaction) {
+            return;
+        }
+        
+        transaction.response = response;
+        transaction.state = FLEXNetworkTransactionStateReceivingData;
+        transaction.latency = -[transaction.startTime timeIntervalSinceDate:responseDate];
+    });
+}
+
+- (void)recordTrackingFinishedWithRequestID:(NSString *)requestID responseBody:(NSData *)responseBody {
+    NSDate *finishedDate = [NSDate date];
+
+    dispatch_async(self.queue, ^{
+        FLEXHTTPTransaction *transaction = self.requestIDsToTrackingTransactions[requestID];
+        if (!transaction) {
+            return;
+        }
+        
+        transaction.state = FLEXNetworkTransactionStateFinished;
+        transaction.duration = -[transaction.startTime timeIntervalSinceDate:finishedDate];
+        transaction.thumbnail = FLEXResources.jsIcon;
+        
         [self postUpdateNotificationForTransaction:transaction];
     });
 }

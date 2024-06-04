@@ -48,6 +48,8 @@ typedef NS_ENUM(NSUInteger, FLEXNetworkTransactionKind) {
 
 /// Array of FLEXHTTPTransaction objects ordered by start time with the newest first.
 @property (nonatomic, readonly) NSArray<FLEXHTTPTransaction *> *HTTPTransactions;
+/// Array of TrackingTransaction objects ordered by start time with the newest first.
+@property (nonatomic, readonly) NSArray<FLEXHTTPTransaction *> *TrackingTransactions;
 /// Array of FLEXWebsocketTransaction objects ordered by start time with the newest first.
 @property (nonatomic, readonly) NSArray<FLEXWebsocketTransaction *> *websocketTransactions API_AVAILABLE(ios(13.0));
 /// Array of FLEXFirebaseTransaction objects ordered by start time with the newest first.
@@ -85,6 +87,15 @@ typedef NS_ENUM(NSUInteger, FLEXNetworkTransactionKind) {
 /// Call to set the request mechanism anytime after recordRequestWillBeSent... has been called.
 /// This string can be set to anything useful about the API used to make the request.
 - (void)recordMechanism:(NSString *)mechanism forRequestID:(NSString *)requestID;
+
+///START TRACKING
+- (void)recordTrackingRequestWithRequestID:(NSString *)requestID request:(NSURLRequest *)request;
+
+- (void)recordTrackingResponseWithRequestID:(NSString *)requestID response:(NSURLResponse *)response;
+
+- (void)recordTrackingFinishedWithRequestID:(NSString *)requestID responseBody:(NSData *)responseBody;
+
+///END TRACKING
 
 - (void)recordWebsocketMessageSend:(NSURLSessionWebSocketMessage *)message
                               task:(NSURLSessionWebSocketTask *)task API_AVAILABLE(ios(13.0));

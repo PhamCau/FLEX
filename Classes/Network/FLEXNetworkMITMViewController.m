@@ -24,12 +24,12 @@
 #import "NSUserDefaults+FLEX.h"
 
 #define kFirebaseAvailable NSClassFromString(@"FIRDocumentReference")
-#define kWebsocketsAvailable @available(iOS 13.0, *)
+#define kFirebaseTrackingAvailable TRUE
 
 typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
     FLEXNetworkObserverModeFirebase = 0,
     FLEXNetworkObserverModeREST,
-    FLEXNetworkObserverModeWebsockets,
+    FLEXNetworkObserverModeTRACKING,
 };
 
 @interface FLEXNetworkMITMViewController ()
@@ -41,6 +41,7 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
 
 @property (nonatomic, readonly) FLEXMITMDataSource<FLEXNetworkTransaction *> *dataSource;
 @property (nonatomic, readonly) FLEXMITMDataSource<FLEXHTTPTransaction *> *HTTPDataSource;
+@property (nonatomic, readonly) FLEXMITMDataSource<FLEXHTTPTransaction *> *TrackingDataSource;
 @property (nonatomic, readonly) FLEXMITMDataSource<FLEXWebsocketTransaction *> *websocketDataSource;
 @property (nonatomic, readonly) FLEXMITMDataSource<FLEXFirebaseTransaction *> *firebaseDataSource;
 
@@ -72,11 +73,11 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
         }];
         [scopeTitles insertObject:@"Firebase" atIndex:0]; // First space
     }
-
-    if (kWebsocketsAvailable) {
-        [scopeTitles addObject:@"Websockets"]; // Last space
-        _websocketDataSource = [FLEXMITMDataSource dataSourceWithProvider:^NSArray * {
-            return FLEXNetworkRecorder.defaultRecorder.websocketTransactions;
+    
+    if (kFirebaseTrackingAvailable) {
+        [scopeTitles addObject:@"TRACKING"]; // Last space
+        _TrackingDataSource = [FLEXMITMDataSource dataSourceWithProvider:^NSArray * {
+            return FLEXNetworkRecorder.defaultRecorder.TrackingTransactions;
         }];
     }
     
@@ -203,9 +204,9 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
                 return FLEXNetworkObserverModeREST;
             }
 
-            return FLEXNetworkObserverModeWebsockets;
-        case FLEXNetworkObserverModeWebsockets:
-            return FLEXNetworkObserverModeWebsockets;
+            return FLEXNetworkObserverModeTRACKING;
+        case FLEXNetworkObserverModeTRACKING:
+            return FLEXNetworkObserverModeTRACKING;
     }
 }
 
@@ -244,9 +245,9 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
                 mode--;
             }
             break;
-        case FLEXNetworkObserverModeWebsockets:
+        case FLEXNetworkObserverModeTRACKING:
             // Default to REST if Websockets are unavailable
-            if (!kWebsocketsAvailable) {
+            if (!kFirebaseTrackingAvailable) {
                 mode--;
             }
             // Firebase will become REST when Firebase is unavailable
@@ -262,8 +263,8 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
     switch (self.mode) {
         case FLEXNetworkObserverModeREST:
             return self.HTTPDataSource;
-        case FLEXNetworkObserverModeWebsockets:
-            return self.websocketDataSource;
+        case FLEXNetworkObserverModeTRACKING:
+            return self.TrackingDataSource;
         case FLEXNetworkObserverModeFirebase:
             return self.firebaseDataSource;
     }
@@ -277,6 +278,7 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
     };
     
     [self.HTTPDataSource reloadData:completion];
+    [self.TrackingDataSource reloadData:completion];
     [self.websocketDataSource reloadData:completion];
     [self.firebaseDataSource reloadData:completion];
 }
@@ -427,6 +429,7 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
 
 - (void)handleTransactionUpdatedNotification:(NSNotification *)notification {
     [self.HTTPDataSource reloadByteCounts];
+    [self.TrackingDataSource reloadByteCounts];
     [self.websocketDataSource reloadByteCounts];
     // Don't need to reload Firebase here
 
@@ -503,19 +506,10 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
             break;
         }
             
-        case FLEXNetworkObserverModeWebsockets: {
-            if (@available(iOS 13.0, *)) { // This check will never fail
-                FLEXWebsocketTransaction *transaction = [self websocketTransactionAtIndexPath:indexPath];
-                
-                UIViewController *details = nil;
-                if (transaction.message.type == NSURLSessionWebSocketMessageTypeData) {
-                    details = [FLEXObjectExplorerFactory explorerViewControllerForObject:transaction.message.data];
-                } else {
-                    details = [[FLEXWebViewController alloc] initWithText:transaction.message.string];
-                }
-                
-                [self.navigationController pushViewController:details animated:YES];
-            }
+        case FLEXNetworkObserverModeTRACKING: {
+            FLEXHTTPTransaction *transaction = [self trackingTransactionAtIndexPath:indexPath];
+            UIViewController *details = [FLEXHTTPTransactionDetailController withTransaction:transaction];
+            [self.navigationController pushViewController:details animated:YES];
             break;
         }
         
@@ -605,6 +599,10 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
     return self.firebaseDataSource.transactions[indexPath.row];
 }
 
+- (FLEXHTTPTransaction *)trackingTransactionAtIndexPath:(NSIndexPath *)indexPath {
+    return self.TrackingDataSource.transactions[indexPath.row];
+}
+
 #pragma mark - Search Bar
 
 - (void)updateSearchResults:(NSString *)searchString {
@@ -615,6 +613,7 @@ typedef NS_ENUM(NSInteger, FLEXNetworkObserverMode) {
     };
     
     [self.HTTPDataSource filter:searchString completion:callback];
+    [self.TrackingDataSource filter:searchString completion:callback];
     [self.websocketDataSource filter:searchString completion:callback];
     [self.firebaseDataSource filter:searchString completion:callback];
 }

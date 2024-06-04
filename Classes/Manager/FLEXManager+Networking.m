@@ -65,4 +65,15 @@
     self.customContentTypeViewers[contentType.lowercaseString] = viewControllerFutureBlock;
 }
 
+- (void)addTrackingRequest:(NSURLRequest *)request {
+    NSString *uuid = [[NSUUID UUID] UUIDString];
+    NSURLResponse *response = [[NSHTTPURLResponse alloc] initWithURL:request.URL 
+                                                          statusCode:200
+                                                         HTTPVersion:@"HTTP/1.1"
+                                                        headerFields:nil];
+    [FLEXNetworkRecorder.defaultRecorder recordTrackingRequestWithRequestID:uuid request:request];
+    [FLEXNetworkRecorder.defaultRecorder recordTrackingResponseWithRequestID:uuid response:response];
+    [FLEXNetworkRecorder.defaultRecorder recordTrackingFinishedWithRequestID:uuid responseBody:nil];
+}
+
 @end
